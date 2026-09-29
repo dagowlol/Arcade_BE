@@ -31,34 +31,54 @@ public class FoodChallengeService {
     private final SpeechValidationService speechValidationService;
     private final ObjectMapper objectMapper;
 
-    private static final String[] REWARD_TITLES = {
-            "Free Ice Cream Voucher",
-            "Crispy Burger Coupon",
-            "Happy Meal Voucher",
-            "Super Fries Combo Pass",
-            "Sweet Dessert Voucher",
-            "Golden Foodie Ticket"
+    // Level 3 (HARD) 4-tier ladder sentence templates.
+    private static final String[] L3_SINGLE_TEMPLATES = {
+            "I want %s, please.", "I'd like %s, please.", "Can I have %s, please?", "Could I get %s, please?"
     };
 
-    private static final String[] REWARD_ICONS = {
-            "🍦", "🍔", "🍟", "🍕", "🍗", "🎟️"
+    private static final String[] L3_TWO_HINT_TEMPLATES = {
+            "Can I have %s and %s, please?", "I'd like %s and %s, please.",
+            "I want %s and %s, please.", "Could I get %s and %s, please?"
     };
 
-    // Randomized speech sentence templates for Level 2 (MEDIUM)
-    private static final String[][] MEDIUM_TEMPLATES = {
-            // Single item templates
-            {"Can I have %s, please?", "I'd like %s, please.", "One %s, please.", "Could I get %s?", "I want %s, please."},
-            // Two item templates
-            {"Can I have %s and %s, please?", "I'd like %s and %s, please.", "%s and %s, please.", "Could I get %s and %s?"}
+    private static final String[] L3_TWO_MEMORY_TEMPLATES = {
+            "I need %s and %s, please!", "Can I get %s and %s, please?",
+            "I'd like %s and %s, please!", "Give me %s and %s, please!"
     };
 
-    // Randomized speech sentence templates for Level 3 (HARD)
-    private static final String[][] HARD_TEMPLATES = {
-            // Two item templates
-            {"I'd like %s and %s, please.", "Can I order %s and %s, please?", "I want %s and %s, please.", "Could I have %s and %s?"},
-            // Three item templates
-            {"I'd like %s, %s and %s, please.", "Can I order %s, %s and %s, please?", "I want %s, %s and %s, please.", "Could I have %s, %s and %s?"}
+    private static final String[] L3_THREE_MEMORY_TEMPLATES = {
+            "Give me %s, %s, and %s!", "I need %s, %s, and %s, please!",
+            "Can I get %s, %s, and %s, please?", "I want %s, %s, and %s, please!"
     };
+
+    // ---------- Level 2 (MEDIUM): 3 rotating puzzle types ----------
+    private static final String[] L2_CHALLENGE_TYPES = { "WORD_SCRAMBLE", "FILL_BLANK", "EXTRA_WORD" };
+
+    /**
+     * Tier 1: short, everyday sentences. Every sentence carries a verb so it can be
+     * blanked.
+     */
+    private static final String[] L2_SENTENCES_TIER1 = {
+            "I want %s.", "I like %s.", "I need %s.", "Can I have %s?", "Could I get %s?"
+    };
+
+    /** Tier 2-3: richer sentence shapes including politeness words. */
+    private static final String[] L2_SENTENCES_TIER2 = {
+            "I want %s.", "I like %s.", "I need %s.", "Can I have %s?", "Could I get %s?",
+            "I want %s, please.", "I'd like %s, please.", "I would like %s, please.",
+            "Can I have %s, please?", "Could I get %s, please?", "Can I get %s, please?"
+    };
+
+    /** Tier 3: two items in one sentence. */
+    private static final String[] L2_SENTENCES_TIER3_DOUBLE = {
+            "I want %s and %s.", "Can I have %s and %s, please?", "I'd like %s and %s, please.",
+            "Could I get %s and %s?", "Can I get %s and %s, please?", "I want %s and %s, please.",
+            "Could I have %s and %s, please?"
+    };
+
+    /** Key words used as blanks / distractors. */
+    private static final String[] L2_VERBS = { "want", "like", "need", "have", "get" };
+    private static final String[] L2_NUMBERS = { "one", "two", "three" };
 
     public List<FoodDto> getAllFoods() {
         return foodRepository.findByActiveTrue()
@@ -80,9 +100,9 @@ public class FoodChallengeService {
                         .build(),
                 LevelDto.builder()
                         .id(Level.MEDIUM)
-                        .name("Nghe & Gọi món")
+                        .name("Xếp Từ & Điền Từ")
                         .tag("Cấp độ 2")
-                        .description("Nghe yêu cầu, chọn món, rồi nói tên món bằng tiếng Anh.")
+                        .description("Nghe câu tiếng Anh rồi xếp từ, điền từ vào chỗ trống, hoặc tìm từ thừa.")
                         .icon("🍔")
                         .difficulty("Trung bình")
                         .challengeCount(0)
@@ -91,12 +111,12 @@ public class FoodChallengeService {
                         .id(Level.HARD)
                         .name("Nhớ & Gọi món")
                         .tag("Cấp độ 3")
-                        .description("Nghe yêu cầu, ghi nhớ, tự chọn món và nói câu gọi món bằng tiếng Anh.")
+                        .description(
+                                "Nghe yêu cầu, ghi nhớ món ăn rồi chọn đúng món và số lượng trên menu, bấm đặt hàng.")
                         .icon("⭐")
                         .difficulty("Khó")
                         .challengeCount(0)
-                        .build()
-        );
+                        .build());
     }
 
     @Transactional
@@ -110,7 +130,8 @@ public class FoodChallengeService {
 
         String sessionId = UUID.randomUUID().toString();
         Random random = new Random();
-        int totalChallenges = 3 + random.nextInt(3); // Random 3-5 challenges
+        // Level 3 (HARD) has a fixed 4-challenge ladder: easy -> hard.
+        int totalChallenges = level == Level.HARD ? 4 : 3 + random.nextInt(3); // Random 3-5 challenges
 
         ChallengeSession session = ChallengeSession.builder()
                 .id(sessionId)
@@ -141,7 +162,8 @@ public class FoodChallengeService {
                 .collect(Collectors.toList());
 
         ChallengeDto currentChallengeDto = null;
-        if (session.getCurrentChallengeIndex() < challengeDtos.size() && session.getStatus() == SessionStatus.IN_PROGRESS) {
+        if (session.getCurrentChallengeIndex() < challengeDtos.size()
+                && session.getStatus() == SessionStatus.IN_PROGRESS) {
             currentChallengeDto = challengeDtos.get(session.getCurrentChallengeIndex());
         }
 
@@ -159,47 +181,75 @@ public class FoodChallengeService {
                 .build();
     }
 
+    private ValidationResultDto rejectedResult(ChallengeSession session, String message, String feedbackType) {
+        return ValidationResultDto.builder()
+                .correct(false)
+                .foodCorrect(false)
+                .speechCorrect(false)
+                .message(message)
+                .progress(session.getCurrentChallengeIndex())
+                .total(session.getTotalChallenges())
+                .hearts(session.getHearts())
+                .sessionStatus(session.getStatus())
+                .feedbackType(feedbackType)
+                .build();
+    }
+
     @Transactional
     public ValidationResultDto submitAnswer(String sessionId, SubmitAnswerRequest request) {
         ChallengeSession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new IllegalArgumentException("Session not found: " + sessionId));
 
         if (session.getStatus() != SessionStatus.IN_PROGRESS) {
-            return ValidationResultDto.builder()
-                    .correct(false)
-                    .foodCorrect(false)
-                    .speechCorrect(false)
-                    .message("Trò chơi đã kết thúc.")
-                    .progress(session.getCurrentChallengeIndex())
-                    .total(session.getTotalChallenges())
-                    .hearts(session.getHearts())
-                    .sessionStatus(session.getStatus())
-                    .feedbackType("GAME_OVER")
-                    .build();
+            return rejectedResult(session, "Trò chơi đã kết thúc.", "GAME_OVER");
         }
 
         Challenge challenge = challengeRepository.findById(request.getChallengeId())
                 .orElseThrow(() -> new IllegalArgumentException("Challenge not found: " + request.getChallengeId()));
 
-        List<ChallengeItemDto> targetItems = deserializeItems(challenge.getItemsJson());
-        List<ChallengeItemDto> selectedItems = request.getSelectedItems() != null ? request.getSelectedItems() : Collections.emptyList();
-
-        // 1. Validate Food Selection & Quantities
-        boolean foodCorrect = validateSelectedFoodItems(targetItems, selectedItems);
-
-        // 2. Validate Spoken Text (only for levels that require it)
-        String spokenText = request.getSpokenText() != null ? request.getSpokenText().trim() : "";
-        boolean speechRequired = !challenge.getChallengeType().equals("FINDER");
-        boolean speechCorrect;
-
-        if (speechRequired) {
-            speechCorrect = speechValidationService.isSpeechMatch(spokenText, challenge.getSpeechTarget());
-        } else {
-            // For FINDER type (level 1), speech is not required
-            speechCorrect = true;
+        // Reject stale/duplicate submissions: the challenge must belong to this
+        // session,
+        // must be the one currently being played, and must not be answered already.
+        // Without this guard a repeated POST would advance the index and the score
+        // twice.
+        if (!sessionId.equals(challenge.getSessionId())
+                || !challenge.getSequenceIndex().equals(session.getCurrentChallengeIndex())
+                || Boolean.TRUE.equals(challenge.getCompleted())) {
+            return rejectedResult(session, "Câu hỏi đã qua, hãy chọn lại nhé!", "STALE_CHALLENGE");
         }
 
-        boolean isOverallCorrect = foodCorrect && speechCorrect;
+        List<ChallengeItemDto> targetItems = deserializeItems(challenge.getItemsJson());
+        List<ChallengeItemDto> selectedItems = request.getSelectedItems() != null ? request.getSelectedItems()
+                : Collections.emptyList();
+
+        String spokenText = request.getSpokenText() != null ? request.getSpokenText().trim() : "";
+        String answerText = request.getAnswerText() != null ? request.getAnswerText().trim() : "";
+        String challengeType = challenge.getChallengeType();
+
+        boolean foodCorrect;
+        boolean speechCorrect;
+        boolean isOverallCorrect;
+
+        if (isLanguageChallenge(challengeType)) {
+            // Level 2 puzzles are pure grammar exercises: no food picking, no microphone.
+            ChallengePayloadDto payload = deserializePayload(challenge.getPayloadJson());
+            boolean languageCorrect = validateLanguageAnswer(challenge, payload, answerText);
+            foodCorrect = true;
+            speechCorrect = languageCorrect;
+            isOverallCorrect = languageCorrect;
+        } else {
+            // 1. Validate Food Selection & Quantities
+            foodCorrect = validateSelectedFoodItems(targetItems, selectedItems);
+
+            // 2. Validate Spoken Text (only for challenge types that require speech)
+            boolean speechRequired = "SPEAKING".equals(challengeType) || "ORDER".equals(challengeType)
+                    || "SUPER_ORDER".equals(challengeType);
+            speechCorrect = speechRequired
+                    ? speechValidationService.isSpeechMatch(spokenText, challenge.getSpeechTarget())
+                    : true;
+
+            isOverallCorrect = foodCorrect && speechCorrect;
+        }
 
         if (isOverallCorrect) {
             challenge.setCompleted(true);
@@ -228,7 +278,7 @@ public class FoodChallengeService {
                     .correct(true)
                     .foodCorrect(true)
                     .speechCorrect(true)
-                    .message("Tuyệt vời! Con đã trả lời đúng! 🎉")
+                    .message("Tuyệt vời! Bé đã trả lời đúng! ")
                     .progress(newIndex)
                     .total(session.getTotalChallenges())
                     .hearts(session.getHearts())
@@ -236,7 +286,8 @@ public class FoodChallengeService {
                     .feedbackType("SUCCESS")
                     .nextChallenge(nextChallengeDto)
                     .expectedSpeech(challenge.getSpeechTarget())
-                    .spokenNormalized(speechValidationService.normalize(spokenText))
+                    .spokenNormalized(speechValidationService
+                            .normalize(isLanguageChallenge(challengeType) ? answerText : spokenText))
                     .build();
         } else {
             // Deduct a heart
@@ -246,7 +297,15 @@ public class FoodChallengeService {
             String message;
             String feedbackType;
 
-            if (!foodCorrect && !speechCorrect) {
+            if (isLanguageChallenge(challengeType)) {
+                message = switch (challengeType) {
+                    case "WORD_SCRAMBLE" -> "Thứ tự từ chưa đúng rồi! Nghe lại và xếp lại nhé!";
+                    case "FILL_BLANK" -> "Từ này chưa hợp câu rồi! Nghe lại câu mẫu nhé!";
+                    case "EXTRA_WORD" -> "Từ bạn xóa chưa phải từ thừa! Thử lại nhé!";
+                    default -> "Chưa đúng rồi, thử lại nhé!";
+                };
+                feedbackType = "RETRY_WORD";
+            } else if (!foodCorrect && !speechCorrect) {
                 message = "Gần đúng rồi! Kiểm tra lại món ăn và thử nói rõ hơn nhé!";
                 feedbackType = "RETRY_FOOD";
             } else if (!foodCorrect) {
@@ -259,7 +318,7 @@ public class FoodChallengeService {
 
             if (remainingHearts <= 0) {
                 session.setStatus(SessionStatus.FAILED);
-                message = "Con đã cố gắng rất giỏi! Chơi lại để chiến thắng nhé! 🌟";
+                message = "Bé đã cố gắng rất giỏi! Chơi lại để chiến thắng nhé! 🌟";
                 feedbackType = "GAME_OVER";
             }
 
@@ -276,7 +335,8 @@ public class FoodChallengeService {
                     .sessionStatus(session.getStatus())
                     .feedbackType(feedbackType)
                     .expectedSpeech(challenge.getSpeechTarget())
-                    .spokenNormalized(speechValidationService.normalize(spokenText))
+                    .spokenNormalized(speechValidationService
+                            .normalize(isLanguageChallenge(challengeType) ? answerText : spokenText))
                     .build();
         }
     }
@@ -289,8 +349,10 @@ public class FoodChallengeService {
                 .stream().filter(Challenge::getCorrect).count();
 
         String message = session.getStatus() == SessionStatus.COMPLETED
-                ? "🎉 Xuất sắc! Con đã hoàn thành tất cả thử thách!"
-                : "Con đã cố gắng rất giỏi! Thử lại để nhận phần thưởng nhé!";
+                ? "🎉 Xuất sắc! Bé đã hoàn thành tất cả thử thách!"
+                : "Bé đã cố gắng rất giỏi! Thử lại để nhận phần thưởng nhé!";
+
+        boolean passed = session.getStatus() == SessionStatus.COMPLETED;
 
         return SessionResultDto.builder()
                 .sessionId(session.getId())
@@ -300,23 +362,33 @@ public class FoodChallengeService {
                 .completedChallenges(completed)
                 .heartsRemaining(session.getHearts())
                 .score(session.getScore())
-                .rewardTitle(session.getRewardTitle() != null ? session.getRewardTitle() : "Ngôi sao ẩm thực")
-                .rewardCode(session.getRewardCode() != null ? session.getRewardCode() : "FOOD-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase())
-                .rewardIcon(session.getRewardIcon() != null ? session.getRewardIcon() : "🎟️")
+                .rewardTitle(passed ? session.getRewardTitle() : null)
+                .rewardCode(passed ? session.getRewardCode() : null)
+                .rewardIcon(passed ? session.getRewardIcon() : null)
+                .discountPercent(passed ? discountPercentForLevel(session.getLevel()) : null)
                 .congratulationMessage(message)
                 .completedAt(session.getCompletedAt())
                 .build();
     }
 
-    private void assignRandomReward(ChallengeSession session) {
-        Random random = new Random();
-        int idx = random.nextInt(REWARD_TITLES.length);
-        session.setRewardTitle(REWARD_TITLES[idx]);
-        session.setRewardIcon(REWARD_ICONS[idx]);
-        session.setRewardCode("VOUCHER-" + (1000 + random.nextInt(9000)));
+    /** Coupon discount by level: EASY 5%, MEDIUM 10%, HARD 20%. */
+    private int discountPercentForLevel(Level level) {
+        return switch (level) {
+            case EASY -> 5;
+            case MEDIUM -> 10;
+            case HARD -> 20;
+        };
     }
 
-    private boolean validateSelectedFoodItems(List<ChallengeItemDto> targetItems, List<ChallengeItemDto> selectedItems) {
+    private void assignRandomReward(ChallengeSession session) {
+        int percent = discountPercentForLevel(session.getLevel());
+        session.setRewardTitle(percent + "% OFF Voucher");
+        session.setRewardCode("KFC-" + percent + "-" + (1000 + new Random().nextInt(9000)));
+        session.setRewardIcon("🎟️");
+    }
+
+    private boolean validateSelectedFoodItems(List<ChallengeItemDto> targetItems,
+            List<ChallengeItemDto> selectedItems) {
         Map<Long, Integer> targetMap = new HashMap<>();
         for (ChallengeItemDto item : targetItems) {
             targetMap.put(item.getFoodId(), targetMap.getOrDefault(item.getFoodId(), 0) + item.getQuantity());
@@ -336,19 +408,31 @@ public class FoodChallengeService {
      * Generates randomized challenges with anti-memorization constraints.
      * Each session gets 3-5 challenges with randomized food items.
      */
-    private List<Challenge> generateChallengesForLevel(String sessionId, Level level, int count, List<Food> allFoods, Random random) {
+    private List<Challenge> generateChallengesForLevel(String sessionId, Level level, int count, List<Food> allFoods,
+            Random random) {
         List<Challenge> challenges = new ArrayList<>();
 
         // Shuffle food list copy for random picking without immediate repetition
         List<Food> shuffledFoods = new ArrayList<>(allFoods);
         Collections.shuffle(shuffledFoods, random);
 
+        // Level 2 draws its puzzle type from a reshuffled bag so the three modes
+        // never repeat back-to-back and stay unpredictable across sessions.
+        List<String> typeBag = new ArrayList<>();
+
         for (int i = 0; i < count; i++) {
             Challenge challenge;
             switch (level) {
                 case EASY -> challenge = generateEasyChallenge(sessionId, i, shuffledFoods, allFoods, random);
-                case MEDIUM -> challenge = generateMediumChallenge(sessionId, i, shuffledFoods, allFoods, random);
-                case HARD -> challenge = generateHardChallenge(sessionId, i, shuffledFoods, allFoods, random);
+                case MEDIUM -> {
+                    if (typeBag.isEmpty()) {
+                        typeBag.addAll(List.of(L2_CHALLENGE_TYPES));
+                        Collections.shuffle(typeBag, random);
+                    }
+                    challenge = generateMediumChallenge(sessionId, i, count, typeBag.remove(0), shuffledFoods, allFoods,
+                            random);
+                }
+                case HARD -> challenge = generateHardChallenge(sessionId, i, allFoods, random);
                 default -> challenge = generateEasyChallenge(sessionId, i, shuffledFoods, allFoods, random);
             }
             challenges.add(challenge);
@@ -362,7 +446,8 @@ public class FoodChallengeService {
      * Child hears an English food name, picks the correct food card from 4 options.
      * No speech required.
      */
-    private Challenge generateEasyChallenge(String sessionId, int index, List<Food> shuffledPool, List<Food> allFoods, Random random) {
+    private Challenge generateEasyChallenge(String sessionId, int index, List<Food> shuffledPool, List<Food> allFoods,
+            Random random) {
         // Target food selected from pool to prevent duplicates
         Food targetFood = shuffledPool.get(index % shuffledPool.size());
 
@@ -385,8 +470,15 @@ public class FoodChallengeService {
                         .foodName(targetFood.getName())
                         .displayName(targetFood.getDisplayName())
                         .quantity(1)
-                        .build()
-        );
+                        .build());
+
+        // 3 Mini-Challenges for Level 1 (Visual Matching, Listening, Speaking)
+        // Cycle or randomize challenge types based on sequence index to avoid
+        // repetition
+        String[] challengeTypes = { "VISUAL_MATCH", "LISTENING", "SPEAKING" };
+        // Offset starting type randomly per session, but cycle sequentially so each
+        // challenge in a round is different
+        String challengeType = challengeTypes[(index + random.nextInt(3)) % challengeTypes.length];
 
         // Random prompt variations
         String[] prompts = {
@@ -396,12 +488,12 @@ public class FoodChallengeService {
                 targetFood.getName() + ", please."
         };
         String promptAudio = prompts[random.nextInt(prompts.length)];
-        String speechTarget = targetFood.getName(); // Just need to identify, no speech required
+        String speechTarget = targetFood.getName();
 
         return Challenge.builder()
                 .sessionId(sessionId)
                 .sequenceIndex(index)
-                .challengeType("FINDER")
+                .challengeType(challengeType)
                 .speechTarget(speechTarget)
                 .promptAudioText(promptAudio)
                 .itemsJson(serialize(items))
@@ -412,24 +504,28 @@ public class FoodChallengeService {
     }
 
     /**
-     * Level 2 - MEDIUM: Listen & Order
-     * Child hears the order, picks the food, then speaks the food name in English.
+     * Level 2 - MEDIUM: 3 rotating language puzzles.
+     * WORD_SCRAMBLE -> rebuild a shuffled sentence in the right order
+     * FILL_BLANK -> drop a key word into the blank
+     * EXTRA_WORD -> spot and remove the intruder word
+     * Difficulty ramps up as the child advances through the session.
      */
-    private Challenge generateMediumChallenge(String sessionId, int index, List<Food> shuffledPool, List<Food> allFoods, Random random) {
-        // Random 1 or 2 distinct foods
-        int numFoods = 1 + random.nextInt(2); // 1 or 2
-        List<Food> selectedTargetFoods = new ArrayList<>();
+    private Challenge generateMediumChallenge(String sessionId, int index, int count, String challengeType,
+            List<Food> shuffledPool, List<Food> allFoods, Random random) {
+        int difficulty = Math.min(3, 1 + (index * 3) / Math.max(1, count));
 
+        // Tier 3 asks for two items, the rest use a single item
+        int numFoods = difficulty >= 3 ? 2 : 1;
+        List<Food> selectedFoods = new ArrayList<>();
         int startIndex = (index * 2) % shuffledPool.size();
         for (int i = 0; i < numFoods; i++) {
-            selectedTargetFoods.add(shuffledPool.get((startIndex + i) % shuffledPool.size()));
+            selectedFoods.add(shuffledPool.get((startIndex + i) % shuffledPool.size()));
         }
 
         List<ChallengeItemDto> items = new ArrayList<>();
-        List<String> spokenParts = new ArrayList<>();
-
-        for (Food food : selectedTargetFoods) {
-            int qty = 1 + random.nextInt(2); // 1 or 2
+        List<String> foodPhrases = new ArrayList<>();
+        for (Food food : selectedFoods) {
+            int qty = difficulty == 1 ? 1 : 1 + random.nextInt(2); // tier 1 always one item
             items.add(ChallengeItemDto.builder()
                     .foodId(food.getId())
                     .foodName(food.getName())
@@ -437,121 +533,441 @@ public class FoodChallengeService {
                     .quantity(qty)
                     .build());
 
-            spokenParts.add(formatQuantityFood(qty, food.getName()));
+            foodPhrases.add(formatQuantityFood(qty, food.getName()));
         }
 
-        // Pick a random template
+        // Pick a sentence shape that matches the difficulty tier
         String[] templates;
-        String orderSentence;
-        if (spokenParts.size() == 1) {
-            templates = MEDIUM_TEMPLATES[0];
-            String template = templates[random.nextInt(templates.length)];
-            orderSentence = String.format(template, spokenParts.get(0));
+        if (foodPhrases.size() > 1) {
+            templates = L2_SENTENCES_TIER3_DOUBLE;
+        } else if (difficulty == 1) {
+            templates = L2_SENTENCES_TIER1;
         } else {
-            templates = MEDIUM_TEMPLATES[1];
-            String template = templates[random.nextInt(templates.length)];
-            orderSentence = String.format(template, spokenParts.get(0), spokenParts.get(1));
+            templates = L2_SENTENCES_TIER2;
         }
+        String template = templates[random.nextInt(templates.length)];
+        String sentence = foodPhrases.size() > 1
+                ? String.format(template, foodPhrases.get(0), foodPhrases.get(1))
+                : String.format(template, foodPhrases.get(0));
 
-        // Options: Include all active foods for full menu tray experience
+        ChallengePayloadDto payload = switch (challengeType) {
+            case "WORD_SCRAMBLE" -> buildScramblePayload(sentence, difficulty, random);
+            case "FILL_BLANK" -> buildBlankPayload(sentence, foodPhrases, difficulty, random);
+            case "EXTRA_WORD" -> buildExtraWordPayload(sentence, selectedFoods, allFoods, difficulty, random);
+            default -> ChallengePayloadDto.builder().difficulty(difficulty).build();
+        };
+
+        // Options: full menu, still used by the result screen / future levels
         List<FoodDto> options = allFoods.stream().map(this::mapFoodToDto).collect(Collectors.toList());
         Collections.shuffle(options, random);
 
         return Challenge.builder()
                 .sessionId(sessionId)
                 .sequenceIndex(index)
-                .challengeType("ORDER")
-                .speechTarget(orderSentence)
-                .promptAudioText(orderSentence)
+                .challengeType(challengeType)
+                .speechTarget(sentence)
+                .promptAudioText(sentence)
                 .itemsJson(serialize(items))
                 .optionsJson(serialize(options))
+                .payloadJson(serialize(payload))
                 .completed(false)
                 .correct(false)
                 .build();
     }
 
     /**
-     * Level 3 - HARD: Remember & Order
-     * Child hears the order, it disappears, then they must remember, select foods and speak the full sentence.
+     * WORD_SCRAMBLE: shuffle the sentence tokens so the child must rebuild the
+     * order.
      */
-    private Challenge generateHardChallenge(String sessionId, int index, List<Food> shuffledPool, List<Food> allFoods, Random random) {
-        // Random 2 or 3 distinct foods
-        int numFoods = 2 + random.nextInt(2); // 2 or 3
-        List<Food> selectedTargetFoods = new ArrayList<>();
+    private ChallengePayloadDto buildScramblePayload(String sentence, int difficulty, Random random) {
+        List<String> tokens = new ArrayList<>(tokenize(sentence));
+        List<String> scrambled = new ArrayList<>(tokens);
 
-        int startIndex = (index * 3) % shuffledPool.size();
-        for (int i = 0; i < numFoods; i++) {
-            selectedTargetFoods.add(shuffledPool.get((startIndex + i) % shuffledPool.size()));
+        // Keep shuffling until the puzzle is not already solved
+        for (int attempt = 0; attempt < 10 && scrambled.equals(tokens); attempt++) {
+            Collections.shuffle(scrambled, random);
         }
+
+        return ChallengePayloadDto.builder()
+                .instruction("Nghe câu mẫu, rồi chạm các từ theo đúng thứ tự để xếp thành câu!")
+                .difficulty(difficulty)
+                .scrambledWords(scrambled)
+                .build();
+    }
+
+    /**
+     * FILL_BLANK: hide one key word and offer 3 candidates.
+     * Tier 1 blanks the number (easy: recognise the food), tier 2-3 blanks the verb
+     * (grammar).
+     * Only single-token positions are blanked so the sentence stays grammatical.
+     */
+    private ChallengePayloadDto buildBlankPayload(String sentence, List<String> foodPhrases,
+            int difficulty, Random random) {
+        List<String> tokens = tokenize(sentence);
+        List<String> normalized = normalizeTokens(tokens);
+
+        int verbIndex = firstIndexOfAny(normalized, L2_VERBS);
+        int numberIndex = firstIndexOfAny(normalized, L2_NUMBERS);
+
+        // The number can only be blanked when the food name is a single word,
+        // otherwise the sentence would read "one ____ fries".
+        boolean singleWordFood = !foodPhrases.isEmpty()
+                && foodPhrases.stream().allMatch(p -> tokenize(p).size() == 2);
+        boolean numberBlankable = numberIndex >= 0 && singleWordFood;
+
+        int blankIndex;
+        List<String> distractorPool;
+
+        if (difficulty == 1 && numberBlankable) {
+            blankIndex = numberIndex;
+            distractorPool = Arrays.asList(L2_NUMBERS);
+        } else if (verbIndex >= 0) {
+            blankIndex = verbIndex;
+            distractorPool = Arrays.asList(L2_VERBS);
+        } else if (numberBlankable) {
+            blankIndex = numberIndex;
+            distractorPool = Arrays.asList(L2_NUMBERS);
+        } else if (verbIndex >= 0) {
+            blankIndex = verbIndex;
+            distractorPool = Arrays.asList(L2_VERBS);
+        } else {
+            // Every generated sentence carries a verb, so this is unreachable in practice
+            blankIndex = 0;
+            distractorPool = Arrays.asList(L2_NUMBERS);
+        }
+
+        String correctWord = tokens.get(blankIndex);
+
+        List<String> options = new ArrayList<>();
+        options.add(correctWord);
+        List<String> shuffledPool = new ArrayList<>(distractorPool);
+        Collections.shuffle(shuffledPool, random);
+        for (String candidate : shuffledPool) {
+            if (options.size() >= 3) {
+                break;
+            }
+            if (speechValidationService.normalize(candidate).equals(speechValidationService.normalize(correctWord))) {
+                continue;
+            }
+            options.add(candidate);
+        }
+        Collections.shuffle(options, random);
+
+        List<String> blankTokens = new ArrayList<>(tokens);
+        blankTokens.set(blankIndex, withBlank(correctWord));
+
+        return ChallengePayloadDto.builder()
+                .instruction("Nghe câu thoại rồi chọn từ thích hợp để điền vào chỗ trống!")
+                .difficulty(difficulty)
+                .blankSentence(String.join(" ", blankTokens))
+                .blankOptions(options)
+                .correctBlankWord(correctWord)
+                .build();
+    }
+
+    /**
+     * EXTRA_WORD: sneak one more food name into a correct sentence, child must
+     * remove it.
+     * The intruder is always a single clean word so the child sees a normal word
+     * chip.
+     */
+    private ChallengePayloadDto buildExtraWordPayload(String sentence, List<Food> sentenceFoods,
+            List<Food> allFoods, int difficulty, Random random) {
+        List<String> tokens = tokenize(sentence);
+
+        List<Food> candidates = allFoods.stream()
+                .filter(f -> sentenceFoods.stream().noneMatch(sf -> sf.getId().equals(f.getId())))
+                .collect(Collectors.toList());
+        Collections.shuffle(candidates, random);
+
+        // Prefer a single-word name: a two-word chip would look like one long blob on
+        // the board
+        List<Food> singleWord = candidates.stream()
+                .filter(f -> tokenize(f.getName()).size() == 1)
+                .collect(Collectors.toList());
+
+        Food intruder = singleWord.isEmpty() ? candidates.get(0) : singleWord.get(0);
+        if (difficulty >= 3) {
+            // Hard mode: pick a food from the same category so it is genuinely confusing
+            String category = sentenceFoods.get(0).getCategory();
+            intruder = singleWord.stream()
+                    .filter(f -> Objects.equals(f.getCategory(), category))
+                    .findFirst()
+                    .orElse(intruder);
+        }
+
+        // Last token of a multi-word name, so the chip is always exactly one word
+        String intruderWord = tokenize(intruder.getName()).get(tokenize(intruder.getName()).size() - 1);
+        int insertAt = 1 + random.nextInt(Math.max(1, tokens.size() - 1));
+
+        List<String> wordsWithExtra = new ArrayList<>(tokens);
+        wordsWithExtra.add(insertAt, intruderWord);
+
+        return ChallengePayloadDto.builder()
+                .instruction("Nghe câu này rồi chạm vào TỪ THỪA để xóa đi nhé!")
+                .difficulty(difficulty)
+                .sentenceWords(wordsWithExtra)
+                .extraWordIndex(insertAt)
+                .extraWord(intruderWord)
+                .build();
+    }
+
+    private List<String> tokenize(String sentence) {
+        List<String> tokens = new ArrayList<>();
+        if (sentence == null) {
+            return tokens;
+        }
+        for (String raw : sentence.trim().split("\\s+")) {
+            if (!raw.isEmpty()) {
+                tokens.add(raw);
+            }
+        }
+        return tokens;
+    }
+
+    private List<String> normalizeTokens(List<String> tokens) {
+        return tokens.stream().map(speechValidationService::normalize).collect(Collectors.toList());
+    }
+
+    private int firstIndexOfAny(List<String> tokens, String[] candidates) {
+        for (int i = 0; i < tokens.size(); i++) {
+            for (String candidate : candidates) {
+                if (tokens.get(i).equals(candidate)) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Replaces a token with the blank placeholder, keeping any trailing
+     * punctuation.
+     */
+    private String withBlank(String token) {
+        int cut = 0;
+        while (cut < token.length() && !Character.isLetterOrDigit(token.charAt(cut))) {
+            cut++;
+        }
+        int end = token.length();
+        while (end > cut && !Character.isLetterOrDigit(token.charAt(end - 1))) {
+            end--;
+        }
+        return "____" + token.substring(end);
+    }
+
+    private boolean isLanguageChallenge(String type) {
+        return "WORD_SCRAMBLE".equals(type) || "FILL_BLANK".equals(type) || "EXTRA_WORD".equals(type);
+    }
+
+    /**
+     * Validates the child's answer for the Level 2 language puzzles.
+     * WORD_SCRAMBLE requires the exact token order; the other two a single word.
+     */
+    private boolean validateLanguageAnswer(Challenge challenge, ChallengePayloadDto payload, String answerText) {
+        if (payload == null || answerText == null || answerText.trim().isEmpty()) {
+            return false;
+        }
+
+        return switch (challenge.getChallengeType()) {
+            case "WORD_SCRAMBLE" -> speechValidationService.normalize(answerText)
+                    .equals(speechValidationService.normalize(challenge.getSpeechTarget()));
+            case "FILL_BLANK" -> speechValidationService.normalize(answerText)
+                    .equals(speechValidationService.normalize(payload.getCorrectBlankWord()));
+            case "EXTRA_WORD" -> speechValidationService.normalize(answerText)
+                    .equals(speechValidationService.normalize(payload.getExtraWord()));
+            default -> false;
+        };
+    }
+
+    /**
+     * Level 3 - HARD: Nhớ & Gọi món (Remember & Order) — menu only, no microphone.
+     * Fixed 4-challenge ladder, randomly picked foods but escalating difficulty:
+     * 1. RẤT DỄ -> one single item, quantity 1, full text hint shown.
+     * 2. DỄ -> two items from two different categories, qty 1 each, full text hint
+     * shown.
+     * 3. TRUNG BÌNH -> memory: two familiar items, small quantities, text
+     * auto-hidden.
+     * 4. KHÓ -> memory: three items with quantities, text auto-hidden.
+     */
+    private Challenge generateHardChallenge(String sessionId, int index, List<Food> allFoods, Random random) {
+        int tier = index + 1;
+        boolean memory = tier >= 3;
+
+        List<Food> targets = switch (tier) {
+            case 2, 3 -> pickFromDistinctCategories(allFoods, random, 2);
+            case 4 -> pickDistinct(allFoods, random, 3);
+            default -> pickDistinct(allFoods, random, 1);
+        };
+        int[] quantities = quantitiesForTier(tier, random);
 
         List<ChallengeItemDto> items = new ArrayList<>();
         List<String> spokenParts = new ArrayList<>();
-
-        for (Food food : selectedTargetFoods) {
-            int qty = 1 + random.nextInt(2); // 1 or 2
+        for (int i = 0; i < targets.size(); i++) {
+            Food food = targets.get(i);
             items.add(ChallengeItemDto.builder()
                     .foodId(food.getId())
                     .foodName(food.getName())
                     .displayName(food.getDisplayName())
-                    .quantity(qty)
+                    .quantity(quantities[i])
                     .build());
-
-            spokenParts.add(formatQuantityFood(qty, food.getName()));
+            spokenParts.add(formatQuantityFood(quantities[i], food.getDisplayName()));
         }
 
-        // Pick a random template
-        String[] templates;
-        String orderSentence;
-        if (spokenParts.size() == 2) {
-            templates = HARD_TEMPLATES[0];
-            String template = templates[random.nextInt(templates.length)];
-            orderSentence = String.format(template, spokenParts.get(0), spokenParts.get(1));
-        } else {
-            templates = HARD_TEMPLATES[1];
-            String template = templates[random.nextInt(templates.length)];
-            orderSentence = String.format(template, spokenParts.get(0), spokenParts.get(1), spokenParts.get(2));
-        }
+        String orderSentence = buildL3OrderSentence(tier, spokenParts, random);
 
-        // Options: Include all active foods
+        // Options: the full menu so the child must find the right food across the tabs.
         List<FoodDto> options = allFoods.stream().map(this::mapFoodToDto).collect(Collectors.toList());
         Collections.shuffle(options, random);
+
+        ChallengePayloadDto payload = ChallengePayloadDto.builder()
+                .memory(memory)
+                .difficulty(tier)
+                .build();
 
         return Challenge.builder()
                 .sessionId(sessionId)
                 .sequenceIndex(index)
-                .challengeType("SUPER_ORDER")
+                .challengeType(memory ? "MEMORY_ORDER" : "MENU_ORDER")
                 .speechTarget(orderSentence)
                 .promptAudioText(orderSentence)
                 .itemsJson(serialize(items))
                 .optionsJson(serialize(options))
+                .payloadJson(serialize(payload))
                 .completed(false)
                 .correct(false)
                 .build();
     }
 
-    private String formatQuantityFood(int quantity, String foodName) {
+    /** Builds the spoken/sentence prompt for the given ladder tier. */
+    private String buildL3OrderSentence(int tier, List<String> parts, Random random) {
+        if (parts.size() == 1) {
+            return String.format(L3_SINGLE_TEMPLATES[random.nextInt(L3_SINGLE_TEMPLATES.length)], parts.get(0));
+        }
+        if (parts.size() == 2) {
+            String[] templates = tier == 3 ? L3_TWO_MEMORY_TEMPLATES : L3_TWO_HINT_TEMPLATES;
+            return String.format(templates[random.nextInt(templates.length)], parts.get(0), parts.get(1));
+        }
+        return String.format(L3_THREE_MEMORY_TEMPLATES[random.nextInt(L3_THREE_MEMORY_TEMPLATES.length)],
+                parts.get(0), parts.get(1), parts.get(2));
+    }
+
+    /**
+     * Picks n distinct foods, each from its own category (guaranteed different
+     * categories).
+     */
+    private List<Food> pickFromDistinctCategories(List<Food> pool, Random random, int n) {
+        Map<String, List<Food>> byCategory = pool.stream()
+                .collect(Collectors.groupingBy(f -> f.getCategory() != null ? f.getCategory() : "Other",
+                        LinkedHashMap::new, Collectors.toList()));
+        List<List<Food>> categoryGroups = new ArrayList<>(byCategory.values());
+        Collections.shuffle(categoryGroups, random);
+
+        List<Food> result = new ArrayList<>();
+        for (List<Food> group : categoryGroups) {
+            if (result.size() >= n)
+                break;
+            List<Food> copy = new ArrayList<>(group);
+            Collections.shuffle(copy, random);
+            result.add(copy.get(0));
+        }
+
+        // Fallback in case there are fewer distinct categories than needed.
+        if (result.size() < n) {
+            List<Food> rest = new ArrayList<>(pool);
+            rest.removeAll(result);
+            Collections.shuffle(rest, random);
+            for (Food food : rest) {
+                if (result.size() >= n)
+                    break;
+                if (!result.contains(food)) {
+                    result.add(food);
+                }
+            }
+        }
+        return result;
+    }
+
+    /** Picks n distinct foods from the pool (shuffled). */
+    private List<Food> pickDistinct(List<Food> pool, Random random, int n) {
+        List<Food> copy = new ArrayList<>(pool);
+        Collections.shuffle(copy, random);
+        return new ArrayList<>(copy.subList(0, Math.min(n, copy.size())));
+    }
+
+    /**
+     * Quantity configurations per ladder tier:
+     * tier 1: 1 item x1 | tier 2: 2 items x1 | tier 3: 2 items, one pair of them
+     * x2 | tier 4: 3 items with quantities 1-2, at least one doubled so the count
+     * matters.
+     */
+    private int[] quantitiesForTier(int tier, Random random) {
+        switch (tier) {
+            case 2:
+                return new int[] { 1, 1 };
+            case 3:
+                return random.nextBoolean() ? new int[] { 1, 2 } : new int[] { 2, 1 };
+            case 4:
+                int[] q = new int[3];
+                for (int i = 0; i < q.length; i++) {
+                    q[i] = 1 + random.nextInt(2); // 1 or 2
+                }
+                if (q[0] != 2 && q[1] != 2 && q[2] != 2) {
+                    q[random.nextInt(q.length)] = 2;
+                }
+                return q;
+            default:
+                return new int[] { 1 };
+        }
+    }
+
+    private String formatQuantityFood(int quantity, String displayName) {
         String numWord = quantity == 1 ? "one" : "two";
         if (quantity == 1) {
-            return numWord + " " + foodName.toLowerCase();
-        } else {
-            return numWord + " " + pluralize(foodName.toLowerCase());
+            // Singular: never pluralize ("one Burger", not "one Burgers").
+            return numWord + " " + titleCase(displayName.toLowerCase());
         }
+        return numWord + " " + titleCase(pluralize(displayName.toLowerCase()));
     }
 
     private String pluralize(String name) {
-        if (name.equals("sandwich")) return "sandwiches";
-        if (name.equals("french fries")) return "french fries";
-        if (name.equals("ice cream")) return "ice creams";
-        if (name.equals("chicken rice")) return "chicken rice";
-        if (name.equals("fried chicken")) return "fried chicken";
-        if (name.endsWith("s") || name.endsWith("x") || name.endsWith("ch") || name.endsWith("sh")) {
-            return name + "es";
+        return switch (name) {
+            // Mass nouns or already-plural words: they stay exactly as they are
+            case "sandwich" -> "sandwiches";
+            case "fries", "french fries", "chicken rice", "fried chicken" -> name;
+            case "ice cream" -> "ice creams";
+            default -> {
+                if (name.endsWith("s")) {
+                    // Already plural ("fries", "noodles"): never build "frieses"
+                    yield name;
+                }
+                if (name.endsWith("x") || name.endsWith("ch") || name.endsWith("sh")) {
+                    yield name + "es";
+                }
+                yield name + "s";
+            }
+        };
+    }
+
+    private String titleCase(String str) {
+        if (str == null || str.isEmpty()) {
+            return str;
         }
-        return name + "s";
+        StringBuilder sb = new StringBuilder();
+        for (String word : str.split(" ")) {
+            if (!word.isEmpty()) {
+                if (sb.length() > 0) {
+                    sb.append(' ');
+                }
+                sb.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+            }
+        }
+        return sb.toString();
     }
 
     private String capitalize(String str) {
-        if (str == null || str.isEmpty()) return str;
+        if (str == null || str.isEmpty())
+            return str;
         return Character.toUpperCase(str.charAt(0)) + str.substring(1);
     }
 
@@ -569,6 +985,8 @@ public class FoodChallengeService {
     }
 
     private ChallengeDto mapChallengeToDto(Challenge challenge) {
+        ChallengePayloadDto payload = deserializePayload(challenge.getPayloadJson());
+
         return ChallengeDto.builder()
                 .challengeId(challenge.getId())
                 .sequenceIndex(challenge.getSequenceIndex())
@@ -579,6 +997,14 @@ public class FoodChallengeService {
                 .options(deserializeOptions(challenge.getOptionsJson()))
                 .completed(challenge.getCompleted())
                 .correct(challenge.getCorrect())
+                .instruction(payload != null ? payload.getInstruction() : null)
+                .difficulty(payload != null ? payload.getDifficulty() : null)
+                .memory(payload != null ? payload.getMemory() : null)
+                .scrambledWords(payload != null ? payload.getScrambledWords() : null)
+                .sentenceWords(payload != null ? payload.getSentenceWords() : null)
+                // extraWordIndex / correctBlankWord / extraWord stay server-side
+                .blankSentence(payload != null ? payload.getBlankSentence() : null)
+                .blankOptions(payload != null ? payload.getBlankOptions() : null)
                 .build();
     }
 
@@ -593,7 +1019,8 @@ public class FoodChallengeService {
 
     private List<ChallengeItemDto> deserializeItems(String json) {
         try {
-            return objectMapper.readValue(json, new TypeReference<>() {});
+            return objectMapper.readValue(json, new TypeReference<>() {
+            });
         } catch (Exception e) {
             log.error("Failed to deserialize items json: {}", json, e);
             return Collections.emptyList();
@@ -602,10 +1029,23 @@ public class FoodChallengeService {
 
     private List<FoodDto> deserializeOptions(String json) {
         try {
-            return objectMapper.readValue(json, new TypeReference<>() {});
+            return objectMapper.readValue(json, new TypeReference<>() {
+            });
         } catch (Exception e) {
             log.error("Failed to deserialize options json: {}", json, e);
             return Collections.emptyList();
+        }
+    }
+
+    private ChallengePayloadDto deserializePayload(String json) {
+        if (json == null || json.isBlank() || json.equals("[]")) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, ChallengePayloadDto.class);
+        } catch (Exception e) {
+            log.error("Failed to deserialize payload json: {}", json, e);
+            return null;
         }
     }
 }

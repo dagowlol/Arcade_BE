@@ -41,6 +41,12 @@ public class Challenge {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String optionsJson;
 
+    // Mode-specific payload (scrambled words, blank sentence, extra word index, ...)
+    // Empty for challenge types that do not need it.
+    @Lob
+    @Column(columnDefinition = "TEXT")
+    private String payloadJson;
+
     @Builder.Default
     private Boolean completed = false;
 

@@ -24,6 +24,7 @@ public class SessionResultDto {
     private String rewardTitle;
     private String rewardCode;
     private String rewardIcon;
+    private Integer discountPercent;
     private String congratulationMessage;
     private LocalDateTime completedAt;
 }

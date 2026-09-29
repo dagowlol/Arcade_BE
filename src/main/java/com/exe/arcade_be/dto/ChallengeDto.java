@@ -21,4 +21,14 @@ public class ChallengeDto {
     private List<FoodDto> options;
     private Boolean completed;
     private Boolean correct;
+
+    // ---- Level 2 language challenges ----
+    private String instruction;
+    private Integer difficulty;
+    private Boolean memory;
+    private List<String> scrambledWords;
+    private List<String> sentenceWords;
+    private Integer extraWordIndex;
+    private String blankSentence;
+    private List<String> blankOptions;
 }
